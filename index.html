@@ -112,7 +112,7 @@ const C = {
 const fontDisplay = "'Space Grotesk', sans-serif";
 const fontMono = "'IBM Plex Mono', monospace";
 // Identifiant de version — comparé à /version.json pour détecter une nouvelle mise en ligne.
-const APP_VERSION = "2026-10-19T22:00:00Z";
+const APP_VERSION = "2026-10-20T09:00:00Z";
 const LEGACY_PERSON = 'Non assigné (historique)';
 const TEAM_VALUE = '__TEAM__';
 const NATIONAL_NAME = 'Karim Bentebbal';
@@ -198,6 +198,7 @@ function isWeekend(year, month, day) {
 // Jours fériés et fêtes nationales — Algérie, années 2026 et 2027.
 // 2026 : dates des fêtes musulmanes vérifiées sur les communiqués officiels (ministère des Affaires religieuses, ministère du Travail / Fonction publique) :
 //   Aïd El-Fitr 20-22 mars, Aïd El-Adha 27-29 mai, 1er Moharram mardi 16 juin, Achoura jeudi 25 juin, Mawlid mardi 25 août.
+//   Jeudi 2 juillet 2026 : élections législatives, journée chômée et payée (confirmé par l'utilisateur, DRH).
 // 2027 : les fêtes musulmanes (Aïd, Moharram, Achoura, Mawlid) sont des dates PRÉVISIONNELLES (calcul astronomique),
 // à confirmer quand les autorités algériennes les annonceront ; corriger la date ici si elle diffère d'un jour.
 // Le Ramadan n'est PAS un jour chômé (jours de travail normaux) — volontairement absent de cette liste.
@@ -214,6 +215,7 @@ const ALGERIA_HOLIDAYS = {
     '2026-05-29': 'Aïd El-Adha (3e jour)',
     '2026-06-16': 'Premier Moharram (Nouvel An Hégire)',
     '2026-06-25': 'Achoura',
+    '2026-07-02': 'Élections législatives (journée chômée et payée)',
     '2026-07-05': "Fête de l'Indépendance et de la Jeunesse",
     '2026-08-25': 'Mawlid Ennabaoui (Naissance du Prophète)',
     '2026-11-01': 'Fête de la Révolution',
@@ -547,6 +549,7 @@ function App() {
     const [specialties, setSpecialties] = useState(DEFAULT_SPECIALTIES);
     const [person, setPerson] = useState(null);
     const [monthState, setMonthState] = useState({ objectif: 0, entries: {}, absences: {} });
+    const [teamRecap, setTeamRecap] = useState([]); // vue équipe : absences déclarées par délégué pour le mois affiché
     const [tab, setTab] = useState('saisie');
     const [loading, setLoading] = useState(true);
     const [showConfig, setShowConfig] = useState(false);
@@ -911,6 +914,7 @@ function App() {
                 const aggEntries = mergeEntries(validDocs.map((d) => activeEntries(d.entries, year, month)));
                 if (!cancelled) {
                     setMonthState({ objectif: aggObjectif, entries: aggEntries, absences: {} });
+                    setTeamRecap(scopePeople.map((p, i) => ({ person: p, objectif: (docs[i] && docs[i].objectif) || 0, absences: (docs[i] && docs[i].absences) || {} })));
                     setLoading(false);
                     setDirty(false);
                 }
@@ -953,7 +957,7 @@ function App() {
                     });
                     bySpec[spec] = { prive, public: pub };
                 });
-                results.push({ month: m, objectif: monthObjectif, realise: monthRealise, bySpec });
+                results.push({ month: m, objectif: monthObjectif, realise: monthRealise, bySpec, absByPerson: candidates.map((p, i) => ({ person: p, absences: (docs[i] && docs[i].absences) || {} })) });
             }
             if (!cancelled) {
                 setYearlyOverview(results);
@@ -1262,7 +1266,7 @@ function App() {
             React.createElement("div", { style: { display: 'flex', gap: 4, marginTop: 16 } },
                 React.createElement(TabButton, { active: tab === 'saisie', onClick: () => goToTab('saisie'), label: "\uD83D\uDCC5 Saisie" }),
                 React.createElement(TabButton, { active: tab === 'dashboard', onClick: () => goToTab('dashboard'), label: "\uD83D\uDCCA Tableau de bord" }))),
-        React.createElement("div", { style: { padding: '22px 26px 40px', maxWidth: 1180, margin: '0 auto' } }, loading || !person ? (React.createElement("div", { style: { textAlign: 'center', padding: 60, color: C.inkSoft } }, "Chargement\u2026")) : tab === 'saisie' ? (isTeam ? (React.createElement("div", { style: { ...cardStyle, textAlign: 'center', padding: 50, color: C.inkSoft } }, "Vue agr\u00E9g\u00E9e en lecture seule. S\u00E9lectionnez un d\u00E9l\u00E9gu\u00E9 (ou votre saisie personnelle) dans le menu pour voir le d\u00E9tail jour par jour.")) : (React.createElement(SaisieTab, { year: year, month: month, weeks: weeks, specialties: specialties, entryFor: entryFor, updateEntry: updateEntry, absences: absences, setAbsence: setAbsence, onOpenPeriod: () => setShowPeriod(true), objectif: objectif, updateObjectif: updateObjectif, savedPulse: savedPulse, cardStyle: cardStyle, specialtyTotals: specialtyTotals, grandTotal: grandTotal, gap: gap, progression: progression, dirty: dirty, saving: saving, saveNow: saveNow, readOnly: !canEdit, viewedPerson: person }))) : (React.createElement(DashboardTab, { objectif: objectif, grandTotal: grandTotal, gap: gap, progression: progression, specialtyTotals: specialtyTotals, weeks: weeks, weeklyTotals: weeklyTotals, specialties: specialties, calendarGrid: calendarGrid, heatColor: heatColor, heatTextColor: heatTextColor, dayTotal: dayTotal, cardStyle: cardStyle, year: year, month: month, yearlyOverview: yearlyOverview, yearlyLoading: yearlyLoading, goToMonth: goToMonth, personLabel: person && person.startsWith('TEAM:') ? `${person.slice(5)} (Équipe)` : person, onRefresh: () => setDataVersion((v) => v + 1) }))),
+        React.createElement("div", { style: { padding: '22px 26px 40px', maxWidth: 1180, margin: '0 auto' } }, loading || !person ? (React.createElement("div", { style: { textAlign: 'center', padding: 60, color: C.inkSoft } }, "Chargement\u2026")) : tab === 'saisie' ? (isTeam ? (React.createElement(TeamRecap, { year: year, month: month, rows: teamRecap, cardStyle: cardStyle })) : (React.createElement(SaisieTab, { year: year, month: month, weeks: weeks, specialties: specialties, entryFor: entryFor, updateEntry: updateEntry, absences: absences, setAbsence: setAbsence, onOpenPeriod: () => setShowPeriod(true), objectif: objectif, updateObjectif: updateObjectif, savedPulse: savedPulse, cardStyle: cardStyle, specialtyTotals: specialtyTotals, grandTotal: grandTotal, gap: gap, progression: progression, dirty: dirty, saving: saving, saveNow: saveNow, readOnly: !canEdit, viewedPerson: person }))) : (React.createElement(DashboardTab, { isTeam: isTeam, objectif: objectif, grandTotal: grandTotal, gap: gap, progression: progression, specialtyTotals: specialtyTotals, weeks: weeks, weeklyTotals: weeklyTotals, specialties: specialties, calendarGrid: calendarGrid, heatColor: heatColor, heatTextColor: heatTextColor, dayTotal: dayTotal, cardStyle: cardStyle, year: year, month: month, yearlyOverview: yearlyOverview, yearlyLoading: yearlyLoading, goToMonth: goToMonth, personLabel: person && person.startsWith('TEAM:') ? `${person.slice(5)} (Équipe)` : person, onRefresh: () => setDataVersion((v) => v + 1) }))),
         showConfig && React.createElement(ConfigModal, { specialties: specialties, newSpec: newSpec, setNewSpec: setNewSpec, addSpecialty: addSpecialty, removeSpecialty: removeSpecialty, onClose: () => setShowConfig(false), onReset: resetSpecialties }),
         showImport && React.createElement(ImportModal, { onClose: () => setShowImport(false), onImport: importHistorical, importing: importing, importedMonths: importedMonths }),
         showPasswordModal && React.createElement(PasswordModal, { loggedInUser: loggedInUser, credentials: credentials, onChangePassword: changePassword, onClose: () => setShowPasswordModal(false) }),
@@ -1285,6 +1289,36 @@ function TabButton({ active, onClick, label }) {
 const thStyle = { padding: '9px 10px', fontSize: 12, fontWeight: 700, textAlign: 'center', fontFamily: "'Space Grotesk', sans-serif" };
 const thSubStyle = { padding: '5px 10px', textAlign: 'center', fontWeight: 600 };
 const tdStyle = { padding: '5px 8px', fontSize: 12.5, textAlign: 'center', borderTop: '1px solid #EAEDEC' };
+// Vue directeur / national : jours non travaillés du mois, délégué par délégué (fériés communs, maladie, congé, formation, congrès, réunion, événement, autre)
+function TeamRecap({ year, month, rows, cardStyle }) {
+    const { holidaysInMonth, trueWorkdays: baseWorkdays } = workdayBreakdown(year, month, {});
+    const chip = (key, bg, border, color, text, title) => React.createElement("span", { key: key, title: title || '', style: { fontSize: 11.5, color: color, background: bg, border: `1px solid ${border}`, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap', display: 'inline-block', margin: '2px 4px 2px 0' } }, text);
+    return (React.createElement("div", null,
+        React.createElement("div", { style: { ...cardStyle, padding: '14px 18px', marginBottom: 14 } },
+            React.createElement("div", { style: { fontWeight: 700, fontSize: 14, marginBottom: 4 } }, `Jours non travaillés \u2014 ${MONTH_NAMES[month]} ${year}`),
+            React.createElement("div", { style: { fontSize: 12.5, color: '#5B6672', marginBottom: 8, lineHeight: 1.5 } }, `Le week-end (vendredi et samedi) et les jours fériés sont communs \u00E0 toute l'\u00E9quipe. ${baseWorkdays} jours travaill\u00E9s avant absences individuelles.`),
+            holidaysInMonth.length > 0
+                ? holidaysInMonth.map((h) => chip('h' + h.d, '#FBF1DF', '#E9D3A8', '#8A5A1E', `\uD83D\uDFE0 ${h.d} ${DAY_LABELS[new Date(year, month, h.d).getDay()]} \u2014 ${h.name}`))
+                : React.createElement("span", { style: { fontSize: 12.5, color: '#5B6672' } }, "Aucun jour f\u00E9ri\u00E9 ce mois-ci.")),
+        React.createElement("div", { style: { ...cardStyle, padding: 0, overflow: 'hidden' } },
+            React.createElement("div", { style: { overflowX: 'auto' } },
+                React.createElement("table", { style: { width: '100%' } },
+                    React.createElement("thead", null,
+                        React.createElement("tr", { style: { background: '#1B2430', color: '#fff' } },
+                            React.createElement("th", { style: { ...thStyle, textAlign: 'left', minWidth: 150 } }, "D\u00E9l\u00E9gu\u00E9"),
+                            React.createElement("th", { style: { ...thStyle, minWidth: 90 } }, "Jours travaill\u00E9s"),
+                            React.createElement("th", { style: { ...thStyle, textAlign: 'left', minWidth: 260 } }, "Absences et journ\u00E9es d\u00E9clar\u00E9es"))),
+                    React.createElement("tbody", null, rows.map((r) => {
+                        const b = workdayBreakdown(year, month, r.absences);
+                        return (React.createElement("tr", { key: r.person },
+                            React.createElement("td", { style: { ...tdStyle, textAlign: 'left', fontWeight: 600 } }, r.person),
+                            React.createElement("td", { style: { ...tdStyle, fontFamily: fontMono, fontWeight: 700, color: '#0F6E6E' } }, b.trueWorkdays),
+                            React.createElement("td", { style: { ...tdStyle, textAlign: 'left' } }, b.absencesInMonth.length === 0
+                                ? React.createElement("span", { style: { color: '#8A96A3', fontSize: 12 } }, "Aucune absence d\u00E9clar\u00E9e")
+                                : b.absencesInMonth.map((a) => chip('a' + a.d, ABSENCE_BG, '#D5C8E8', ABSENCE_INK, `${ABSENCE_TYPES[a.type].icon} ${a.d} ${DAY_LABELS[new Date(year, month, a.d).getDay()]} \u2014 ${absenceText(absenceEntry(r.absences, a.d)).replace(/^\S+\s/, '')}`, (absenceEntry(r.absences, a.d) || {}).detail || '')))));
+                    }))))),
+        React.createElement("div", { style: { textAlign: 'center', fontSize: 12.5, color: '#5B6672', marginTop: 12 } }, "Choisissez un d\u00E9l\u00E9gu\u00E9 dans le menu pour voir le d\u00E9tail jour par jour.")));
+}
 function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, absences, setAbsence, onOpenPeriod, objectif, updateObjectif, savedPulse, cardStyle, specialtyTotals, grandTotal, gap, progression, dirty, saving, saveNow, readOnly, viewedPerson }) {
     const { calendarWorkdays, holidaysInMonth, absencesInMonth, trueWorkdays, suggestedObjectif } = workdayBreakdown(year, month, absences);
     const absSelectStyle = { fontSize: 11.5, border: `1px solid #D7DEDC`, borderRadius: 5, background: '#FBFCFC', color: '#5B6672', padding: '1px 2px', marginLeft: 6, cursor: 'pointer', maxWidth: 34 };
@@ -1305,10 +1339,10 @@ function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, abs
                             background: dirty ? '#0F6E6E' : '#C7D6D5', color: '#fff', border: 'none', borderRadius: 8,
                             padding: '9px 20px', fontSize: 13.5, fontWeight: 700, cursor: dirty && !saving ? 'pointer' : 'default',
                         } }, saving ? 'Enregistrement…' : 'Valider et enregistrer'))))),
-            !readOnly && (React.createElement("div", { style: { marginTop: 12, paddingTop: 12, borderTop: '1px solid #EAEDEC', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-                React.createElement("button", { type: "button", onClick: () => updateObjectif(suggestedObjectif), title: "Cliquer pour appliquer cet objectif sugg\u00E9r\u00E9", style: {
+            (React.createElement("div", { style: { marginTop: 12, paddingTop: 12, borderTop: '1px solid #EAEDEC', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+                React.createElement("button", { type: "button", onClick: () => { if (!readOnly) updateObjectif(suggestedObjectif); }, title: readOnly ? "Jours travaill\u00E9s du mois et objectif sugg\u00E9r\u00E9 (lecture seule)" : "Cliquer pour appliquer cet objectif sugg\u00E9r\u00E9", style: {
                         display: 'flex', alignItems: 'center', gap: 6, background: '#EEF2F1', border: '1px solid #D7DEDC',
-                        borderRadius: 20, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, color: '#0F6E6E', cursor: 'pointer',
+                        borderRadius: 20, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, color: '#0F6E6E', cursor: readOnly ? 'default' : 'pointer',
                     } },
                     "\uD83D\uDCC5 ",
                     calendarWorkdays,
@@ -1328,7 +1362,7 @@ function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, abs
                     trueWorkdays,
                     " j. travaill\u00E9s \u2192 ",
                     React.createElement("span", { style: { fontWeight: 800 } }, suggestedObjectif)),
-                React.createElement("button", { type: "button", onClick: onOpenPeriod, title: "Maladie, cong\u00E9, formation, congr\u00E8s, r\u00E9union, \u00E9v\u00E9nement ou autre \u2014 les jours seront d\u00E9duits des jours travaill\u00E9s", style: {
+                !readOnly && React.createElement("button", { type: "button", onClick: onOpenPeriod, title: "Maladie, cong\u00E9, formation, congr\u00E8s, r\u00E9union, \u00E9v\u00E9nement ou autre \u2014 les jours seront d\u00E9duits des jours travaill\u00E9s", style: {
                         display: 'flex', alignItems: 'center', gap: 6, background: ABSENCE_BG, border: '1px solid #D5C8E8',
                         borderRadius: 20, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, color: ABSENCE_INK, cursor: 'pointer',
                     } }, "\uD83D\uDDD3\uFE0F D\u00E9clarer une absence"),
@@ -1424,7 +1458,94 @@ function KpiCard({ label, value, icon, accent, cardStyle }) {
             React.createElement("span", null, icon)),
         React.createElement("div", { style: { fontFamily: fontMono, fontSize: 26, fontWeight: 600, marginTop: 6, color: accent || '#1B2430' } }, value)));
 }
-function DashboardTab({ objectif, grandTotal, gap, progression, specialtyTotals, weeks, weeklyTotals, specialties, calendarGrid, heatColor, heatTextColor, dayTotal, cardStyle, year, month, yearlyOverview, yearlyLoading, goToMonth, personLabel, onRefresh }) {
+// Récapitulatif annuel des jours non travaillés (jours fériés + absences déclarées), par mois et par type.
+// Délégué seul : un tableau mois x types. Directeur / national : tableau délégué x mois, puis délégué x types.
+function AbsenceYearRecap({ year, yearlyOverview, yearlyLoading, isTeam, cardStyle }) {
+    if (yearlyLoading || !yearlyOverview)
+        return null;
+    const types = Object.keys(ABSENCE_TYPES);
+    const shortLabel = (t) => ABSENCE_TYPES[t].label.replace(/ \(.*\)$/, '');
+    const people = yearlyOverview[0] && yearlyOverview[0].absByPerson ? yearlyOverview[0].absByPerson.map((x) => x.person) : [];
+    const stats = {};
+    people.forEach((p) => { stats[p] = []; });
+    yearlyOverview.forEach((row) => {
+        (row.absByPerson || []).forEach(({ person, absences }) => {
+            const b = workdayBreakdown(year, row.month, absences);
+            const byType = {};
+            b.absencesInMonth.forEach((a) => { byType[a.type] = (byType[a.type] || 0) + 1; });
+            stats[person][row.month] = { byType, total: b.absencesInMonth.length, holidays: b.holidaysInMonth.length, workdays: b.trueWorkdays };
+        });
+    });
+    const get = (p, m) => stats[p][m] || { byType: {}, total: 0, holidays: 0, workdays: 0 };
+    const dash = (n) => (n ? n : '\u2013');
+    const hCell = (key, label, left) => React.createElement("th", { key: key, style: { ...thStyle, textAlign: left ? 'left' : 'center', whiteSpace: 'nowrap' } }, label);
+    const cell = (key, n, opts) => React.createElement("td", { key: key, title: (opts && opts.title) || '', style: { ...tdStyle, fontFamily: fontMono, fontWeight: (opts && opts.bold) ? 700 : 400, color: (opts && opts.color) || (n ? ABSENCE_INK : '#B3BCC2'), background: (opts && opts.bg) || (n ? ABSENCE_BG : 'transparent') } }, dash(n));
+    const typeHeads = () => types.map((t) => hCell(t, `${ABSENCE_TYPES[t].icon} ${shortLabel(t)}`));
+    const sumTypes = (p, t) => yearlyOverview.reduce((s2, row) => s2 + (get(p, row.month).byType[t] || 0), 0);
+    const sumTotal = (p) => yearlyOverview.reduce((s2, row) => s2 + get(p, row.month).total, 0);
+    const sumWork = (p) => yearlyOverview.reduce((s2, row) => s2 + get(p, row.month).workdays, 0);
+    const sumHol = (p) => yearlyOverview.reduce((s2, row) => s2 + get(p, row.month).holidays, 0);
+    const wrap = (children) => React.createElement("div", { style: { overflowX: 'auto' } }, React.createElement("table", { style: { width: '100%' } }, children));
+    const title = (t, sub) => React.createElement("div", { style: { padding: '14px 20px 6px' } }, React.createElement(SectionTitle, null, t), React.createElement("div", { style: { fontSize: 12, color: '#5B6672', marginBottom: 6, lineHeight: 1.5 } }, sub));
+    const head = (cols) => React.createElement("thead", null, React.createElement("tr", { style: { background: '#1B2430', color: '#fff' } }, cols));
+    if (!isTeam && people.length === 1) {
+        const p = people[0];
+        return (React.createElement("div", { style: { ...cardStyle, padding: 0, overflow: 'hidden' } },
+            title(`Jours non travaillés \u2014 ${year}`, "Jours f\u00E9ri\u00E9s (hors week-end) et absences d\u00E9clar\u00E9es, par mois et par type. Le week-end (vendredi et samedi) n'est pas compt\u00E9."),
+            wrap([
+                head([hCell('m', 'Mois', true), hCell('f', '\uD83D\uDFE0 F\u00E9ri\u00E9s'), ...typeHeads(), hCell('t', 'Total absences'), hCell('w', 'Jours travaill\u00E9s')]),
+                React.createElement("tbody", { key: 'b' },
+                    yearlyOverview.map((row) => {
+                        const st = get(p, row.month);
+                        return (React.createElement("tr", { key: row.month },
+                            React.createElement("td", { style: { ...tdStyle, textAlign: 'left' } }, SHORT_MONTHS[row.month]),
+                            cell('f', st.holidays, { color: '#8A5A1E', bg: st.holidays ? '#FBF1DF' : 'transparent' }),
+                            types.map((t) => cell(t, st.byType[t] || 0)),
+                            cell('t', st.total, { bold: true }),
+                            React.createElement("td", { style: { ...tdStyle, fontFamily: fontMono, fontWeight: 700, color: '#0F6E6E' } }, st.workdays)));
+                    }),
+                    React.createElement("tr", { key: 'tot', style: { background: '#F3F5F4', fontWeight: 700 } },
+                        React.createElement("td", { style: { ...tdStyle, textAlign: 'left', fontWeight: 700 } }, "Ann\u00E9e"),
+                        cell('f', sumHol(p), { bold: true, color: '#8A5A1E', bg: 'transparent' }),
+                        types.map((t) => cell(t, sumTypes(p, t), { bold: true, bg: 'transparent' })),
+                        cell('t', sumTotal(p), { bold: true, bg: 'transparent' }),
+                        React.createElement("td", { style: { ...tdStyle, fontFamily: fontMono, fontWeight: 700, color: '#0F6E6E' } }, sumWork(p))))
+            ])));
+    }
+    return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
+        React.createElement("div", { style: { ...cardStyle, padding: 0, overflow: 'hidden' } },
+            title(`Jours d'absence par d\u00E9l\u00E9gu\u00E9 et par mois \u2014 ${year}`, "Nombre de jours d'absence d\u00E9clar\u00E9s (maladie, cong\u00E9, formation, congr\u00E8s, r\u00E9union, \u00E9v\u00E9nement, autre). Passer la souris sur un chiffre donne le d\u00E9tail par type."),
+            wrap([
+                head([hCell('d', 'D\u00E9l\u00E9gu\u00E9', true), ...SHORT_MONTHS.map((m, i) => hCell('m' + i, m)), hCell('t', 'Total')]),
+                React.createElement("tbody", { key: 'b' }, people.map((p) => (React.createElement("tr", { key: p },
+                    React.createElement("td", { style: { ...tdStyle, textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' } }, p),
+                    SHORT_MONTHS.map((m, i) => {
+                        const st = get(p, i);
+                        const detail = types.filter((t) => st.byType[t]).map((t) => `${shortLabel(t)} : ${st.byType[t]}`).join(' \u00B7 ');
+                        return cell('m' + i, st.total, { title: detail });
+                    }),
+                    cell('t', sumTotal(p), { bold: true })))))
+            ])),
+        React.createElement("div", { style: { ...cardStyle, padding: 0, overflow: 'hidden' } },
+            title(`Jours non travaill\u00E9s par d\u00E9l\u00E9gu\u00E9 et par type \u2014 ${year}`, "Total de l'ann\u00E9e, jours f\u00E9ri\u00E9s (hors week-end) et jours travaill\u00E9s compris."),
+            wrap([
+                head([hCell('d', 'D\u00E9l\u00E9gu\u00E9', true), hCell('f', '\uD83D\uDFE0 F\u00E9ri\u00E9s'), ...typeHeads(), hCell('t', 'Total absences'), hCell('w', 'Jours travaill\u00E9s')]),
+                React.createElement("tbody", { key: 'b' },
+                    people.map((p) => (React.createElement("tr", { key: p },
+                        React.createElement("td", { style: { ...tdStyle, textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' } }, p),
+                        cell('f', sumHol(p), { color: '#8A5A1E', bg: sumHol(p) ? '#FBF1DF' : 'transparent' }),
+                        types.map((t) => cell(t, sumTypes(p, t))),
+                        cell('t', sumTotal(p), { bold: true }),
+                        React.createElement("td", { style: { ...tdStyle, fontFamily: fontMono, fontWeight: 700, color: '#0F6E6E' } }, sumWork(p))))),
+                    React.createElement("tr", { key: 'tot', style: { background: '#F3F5F4' } },
+                        React.createElement("td", { style: { ...tdStyle, textAlign: 'left', fontWeight: 700 } }, "\u00C9quipe"),
+                        cell('f', people.reduce((s2, p) => s2 + sumHol(p), 0), { bold: true, color: '#8A5A1E', bg: 'transparent' }),
+                        types.map((t) => cell(t, people.reduce((s2, p) => s2 + sumTypes(p, t), 0), { bold: true, bg: 'transparent' })),
+                        cell('t', people.reduce((s2, p) => s2 + sumTotal(p), 0), { bold: true, bg: 'transparent' }),
+                        React.createElement("td", { style: { ...tdStyle, fontFamily: fontMono, fontWeight: 700, color: '#0F6E6E' } }, people.reduce((s2, p) => s2 + sumWork(p), 0))))
+            ]))));
+}
+function DashboardTab({ isTeam, objectif, grandTotal, gap, progression, specialtyTotals, weeks, weeklyTotals, specialties, calendarGrid, heatColor, heatTextColor, dayTotal, cardStyle, year, month, yearlyOverview, yearlyLoading, goToMonth, personLabel, onRefresh }) {
     return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
         React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: -8 } },
             React.createElement("div", { style: { fontSize: 12.5, color: '#5B6672', fontWeight: 600 } },
@@ -1511,6 +1632,7 @@ function DashboardTab({ objectif, grandTotal, gap, progression, specialtyTotals,
                             "%")));
                 })));
             })()),
+        React.createElement(AbsenceYearRecap, { year: year, yearlyOverview: yearlyOverview, yearlyLoading: yearlyLoading, isTeam: isTeam, cardStyle: cardStyle }),
         React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'minmax(280px, 1.1fr) minmax(240px, 1fr)', gap: 16 } },
             React.createElement("div", { style: cardStyle },
                 React.createElement(SectionTitle, null, "Intensit\u00E9 quotidienne"),
