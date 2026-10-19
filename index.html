@@ -112,7 +112,7 @@ const C = {
 const fontDisplay = "'Space Grotesk', sans-serif";
 const fontMono = "'IBM Plex Mono', monospace";
 // Identifiant de version — comparé à /version.json pour détecter une nouvelle mise en ligne.
-const APP_VERSION = "2026-10-19T20:00:00Z";
+const APP_VERSION = "2026-10-19T22:00:00Z";
 const LEGACY_PERSON = 'Non assigné (historique)';
 const TEAM_VALUE = '__TEAM__';
 const NATIONAL_NAME = 'Karim Bentebbal';
@@ -196,6 +196,8 @@ function isWeekend(year, month, day) {
     return dow === 5 || dow === 6; // week-end algérien : Vendredi + Samedi
 }
 // Jours fériés et fêtes nationales — Algérie, années 2026 et 2027.
+// 2026 : dates des fêtes musulmanes vérifiées sur les communiqués officiels (ministère des Affaires religieuses, ministère du Travail / Fonction publique) :
+//   Aïd El-Fitr 20-22 mars, Aïd El-Adha 27-29 mai, 1er Moharram mardi 16 juin, Achoura jeudi 25 juin, Mawlid mardi 25 août.
 // 2027 : les fêtes musulmanes (Aïd, Moharram, Achoura, Mawlid) sont des dates PRÉVISIONNELLES (calcul astronomique),
 // à confirmer quand les autorités algériennes les annonceront ; corriger la date ici si elle diffère d'un jour.
 // Le Ramadan n'est PAS un jour chômé (jours de travail normaux) — volontairement absent de cette liste.
@@ -210,7 +212,8 @@ const ALGERIA_HOLIDAYS = {
     '2026-05-27': 'Aïd El-Adha (1er jour)',
     '2026-05-28': 'Aïd El-Adha (2e jour)',
     '2026-05-29': 'Aïd El-Adha (3e jour)',
-    '2026-06-17': 'Premier Moharram (Nouvel An Hégire)',
+    '2026-06-16': 'Premier Moharram (Nouvel An Hégire)',
+    '2026-06-25': 'Achoura',
     '2026-07-05': "Fête de l'Indépendance et de la Jeunesse",
     '2026-08-25': 'Mawlid Ennabaoui (Naissance du Prophète)',
     '2026-11-01': 'Fête de la Révolution',
