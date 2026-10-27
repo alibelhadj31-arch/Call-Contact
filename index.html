@@ -112,7 +112,7 @@ const C = {
 const fontDisplay = "'Space Grotesk', sans-serif";
 const fontMono = "'IBM Plex Mono', monospace";
 // Identifiant de version — comparé à /version.json pour détecter une nouvelle mise en ligne.
-const APP_VERSION = "2026-10-28T00:30:00Z";
+const APP_VERSION = "2026-10-28T01:00:00Z";
 const LEGACY_PERSON = 'Non assigné (historique)';
 const TEAM_VALUE = '__TEAM__';
 const NATIONAL_NAME = 'Karim Bentebbal';
@@ -301,11 +301,42 @@ function workdayBreakdown(year, month, absences) {
 // Règle : un jour où Prospection a des visites, ses chiffres REMPLACENT la saisie manuelle de ce jour
 // (pas de double comptage) ; la ligne est verrouillée « 📡 » dans l'onglet Saisie.
 // La saisie manuelle d'origine n'est jamais écrasée dans « month: » (voir saveNow).
+// Les clés « auto: » peuvent porter le nom complet (« auto:Guetar Atika:… ») ou, pour les anciennes
+// versions de Prospection, l'identifiant de connexion (« auto:atika:… », « auto:Zahira:… »).
+// On retient la plus récente de celles qui désignent la personne (tous les mots de la clé dans son nom).
+const nameToks = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .split(/[^a-z0-9]+/).filter(Boolean).map((t) => (t === 'zahira' ? 'zohra' : t));
+const AUTO_CACHE = {};
+async function autoRowsFor(ym) {
+    const c = AUTO_CACHE[ym];
+    if (c && Date.now() - c.t < 20000) return c.p;
+    const p = (async () => {
+        try {
+            const res = await fetch(`${REST_URL}?key=like.${encodeURIComponent('auto:*:' + ym)}&select=key,value`, { headers: REST_HEADERS, cache: 'no-store' });
+            return res.ok ? await res.json() : [];
+        } catch (e) { return []; }
+    })();
+    AUTO_CACHE[ym] = { t: Date.now(), p };
+    return p;
+}
+async function getAutoFor(person, ym) {
+    const rows = await autoRowsFor(ym);
+    const mine = nameToks(person);
+    const suffix = ':' + ym;
+    let best = null;
+    (rows || []).forEach((r) => {
+        if (!r || !r.key || !r.key.endsWith(suffix) || !r.value) return;
+        const t = nameToks(r.key.slice(5, -suffix.length));
+        if (!t.length || !t.every((w) => mine.includes(w))) return;
+        if (!best || String(r.value.updatedAt || '') > String(best.updatedAt || '')) best = r.value;
+    });
+    return best;
+}
 async function getMonthDoc(person, year, month) {
     const ym = `${year}-${pad2(month + 1)}`;
     const [d, a] = await Promise.all([
         getValue(monthDocKey(person, year, month)),
-        person === LEGACY_PERSON ? Promise.resolve(null) : getValue(`auto:${person}:${ym}`),
+        person === LEGACY_PERSON ? Promise.resolve(null) : getAutoFor(person, ym),
     ]);
     const auto = (a && a.entries) || {};
     const autoDays = Object.keys(auto).filter((k) => auto[k] && Object.keys(auto[k]).length);
