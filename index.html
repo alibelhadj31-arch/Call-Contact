@@ -73,7 +73,7 @@ const REST_HEADERS = {
     apikey: SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
 };
-async function getValue(key) {
+async function getRawValue(key) {
     try {
         const res = await fetch(`${REST_URL}?key=eq.${encodeURIComponent(key)}&select=value`, { headers: REST_HEADERS, cache: 'no-store' });
         if (!res.ok)
@@ -85,7 +85,7 @@ async function getValue(key) {
         return null;
     }
 }
-async function setValue(key, value) {
+async function setRawValue(key, value) {
     try {
         const res = await fetch(REST_URL, {
             method: 'POST',
@@ -97,6 +97,68 @@ async function setValue(key, value) {
     catch (e) {
         return false;
     }
+}
+// ------------------------------------------------------------
+// Liaison avec l'application « Prospection » (visites.html, Firebase) :
+// chaque visite pointée là-bas est comptée ici automatiquement dans la clé séparée « auto:{Nom}:{AAAA-MM} »
+// (alimentée uniquement par Prospection). Au chargement d'un mois, la valeur affichée de chaque case est
+// MAX(saisie manuelle du délégué, comptage automatique) : une visite pointée ne peut jamais être oubliée
+// ni comptée deux fois, et le délégué peut toujours ajouter d'autres visites au-dessus.
+// ------------------------------------------------------------
+const MONTH_KEY_RE = /^month:(.+):(\d{4}-\d{2})$/;
+function mergeAuto(base, auto) {
+    if (!auto || !auto.entries || !Object.keys(auto.entries).length)
+        return base;
+    const doc = base ? { ...base } : { objectif: 0, entries: {}, absences: {} };
+    const absences = doc.absences || {};
+    const entries = {};
+    Object.keys(doc.entries || {}).forEach((d) => { entries[d] = { ...doc.entries[d] }; });
+    Object.keys(auto.entries).forEach((day) => {
+        if (absences[day])
+            return; // journée déclarée (congé, réunion...) : la saisie y est refusée, on n'y ajoute rien
+        Object.keys(auto.entries[day] || {}).forEach((spec) => {
+            const a = auto.entries[day][spec] || {};
+            const cur = (entries[day] && entries[day][spec]) || {};
+            entries[day] = entries[day] || {};
+            entries[day][spec] = { prive: Math.max(cur.prive || 0, a.prive || 0), public: Math.max(cur.public || 0, a.public || 0) };
+        });
+    });
+    return { ...doc, entries, _auto: auto.entries };
+}
+// À l'enregistrement : on ne garde de la saisie manuelle que ce qui DÉPASSE le comptage automatique
+// (le reste est refourni par Prospection à chaque chargement, et suit donc ses corrections).
+function stripAuto(value) {
+    const a = value._auto || {};
+    const out = { ...value };
+    delete out._auto;
+    const ent = {};
+    Object.keys(value.entries || {}).forEach((day) => {
+        const nd = {};
+        Object.keys(value.entries[day] || {}).forEach((spec) => {
+            const e = value.entries[day][spec] || {};
+            const ac = (a[day] && a[day][spec]) || {};
+            const p = (e.prive || 0) > (ac.prive || 0) ? e.prive : 0;
+            const u = (e.public || 0) > (ac.public || 0) ? e.public : 0;
+            if (p || u)
+                nd[spec] = { prive: p, public: u };
+        });
+        if (Object.keys(nd).length)
+            ent[day] = nd;
+    });
+    out.entries = ent;
+    return out;
+}
+async function getValue(key) {
+    const m = MONTH_KEY_RE.exec(key);
+    if (!m)
+        return getRawValue(key);
+    const [base, auto] = await Promise.all([getRawValue(key), getRawValue(`auto:${m[1]}:${m[2]}`)]);
+    return mergeAuto(base, auto);
+}
+async function setValue(key, value) {
+    if (value && value._auto && MONTH_KEY_RE.test(key))
+        return setRawValue(key, stripAuto(value));
+    return setRawValue(key, value);
 }
 // ============================================================
 // 2) constantes & tokens visuels
@@ -112,7 +174,7 @@ const C = {
 const fontDisplay = "'Space Grotesk', sans-serif";
 const fontMono = "'IBM Plex Mono', monospace";
 // Identifiant de version — comparé à /version.json pour détecter une nouvelle mise en ligne.
-const APP_VERSION = "2026-10-20T09:00:00Z";
+const APP_VERSION = "2026-10-27T23:00:00Z";
 const LEGACY_PERSON = 'Non assigné (historique)';
 const TEAM_VALUE = '__TEAM__';
 const NATIONAL_NAME = 'Karim Bentebbal';
@@ -922,7 +984,7 @@ function App() {
             else {
                 const data = await getValue(monthDocKey(person, year, month));
                 if (!cancelled) {
-                    setMonthState(data ? { objectif: data.objectif || 0, entries: data.entries || {}, absences: data.absences || {} } : { objectif: 0, entries: {}, absences: {} });
+                    setMonthState(data ? { objectif: data.objectif || 0, entries: data.entries || {}, absences: data.absences || {}, _auto: data._auto || {} } : { objectif: 0, entries: {}, absences: {} });
                     setLoading(false);
                     setDirty(false);
                 }
@@ -990,12 +1052,16 @@ function App() {
             setDataVersion((v) => v + 1);
         }
     }, [canEdit, person, year, month, monthState, pulseSaved]);
+    const autoCellOf = (day, spec) => (((monthState._auto || {})[day]) || {})[spec] || {};
+    const autoStyle = (day, spec, field) => (autoCellOf(day, spec)[field] > 0 ? { background: '#DDEFE5', fontWeight: 700 } : undefined);
+    const autoTitle = (day, spec, field) => (autoCellOf(day, spec)[field] > 0 ? `${autoCellOf(day, spec)[field]} visite(s) pointée(s) dans Prospection : comptées automatiquement (vous pouvez ajouter d'autres visites au-dessus)` : '');
     const updateEntry = (day, spec, field, rawValue) => {
         if (!canEdit)
             return;
         if (isNonWorking(year, month, Number(day)) || getAbsence(absences, day))
             return; // week-end, jour férié ou journée déclarée (congé, réunion...) : saisie refusée
-        const value = Math.max(0, Number(rawValue) || 0);
+        const autoCell = (((monthState._auto || {})[day]) || {})[spec] || {};
+        const value = Math.max(autoCell[field] || 0, Math.max(0, Number(rawValue) || 0)); // jamais en dessous des visites pointées dans Prospection
         const newEntries = { ...entries };
         const dayEntry = { ...(newEntries[day] || {}) };
         const specEntry = { ...(dayEntry[spec] || { prive: 0, public: 0 }) };
@@ -1266,7 +1332,7 @@ function App() {
             React.createElement("div", { style: { display: 'flex', gap: 4, marginTop: 16 } },
                 React.createElement(TabButton, { active: tab === 'saisie', onClick: () => goToTab('saisie'), label: "\uD83D\uDCC5 Saisie" }),
                 React.createElement(TabButton, { active: tab === 'dashboard', onClick: () => goToTab('dashboard'), label: "\uD83D\uDCCA Tableau de bord" }))),
-        React.createElement("div", { style: { padding: '22px 26px 40px', maxWidth: 1180, margin: '0 auto' } }, loading || !person ? (React.createElement("div", { style: { textAlign: 'center', padding: 60, color: C.inkSoft } }, "Chargement\u2026")) : tab === 'saisie' ? (isTeam ? (React.createElement(TeamRecap, { year: year, month: month, rows: teamRecap, cardStyle: cardStyle })) : (React.createElement(SaisieTab, { year: year, month: month, weeks: weeks, specialties: specialties, entryFor: entryFor, updateEntry: updateEntry, absences: absences, setAbsence: setAbsence, onOpenPeriod: () => setShowPeriod(true), objectif: objectif, updateObjectif: updateObjectif, savedPulse: savedPulse, cardStyle: cardStyle, specialtyTotals: specialtyTotals, grandTotal: grandTotal, gap: gap, progression: progression, dirty: dirty, saving: saving, saveNow: saveNow, readOnly: !canEdit, viewedPerson: person }))) : (React.createElement(DashboardTab, { isTeam: isTeam, objectif: objectif, grandTotal: grandTotal, gap: gap, progression: progression, specialtyTotals: specialtyTotals, weeks: weeks, weeklyTotals: weeklyTotals, specialties: specialties, calendarGrid: calendarGrid, heatColor: heatColor, heatTextColor: heatTextColor, dayTotal: dayTotal, cardStyle: cardStyle, year: year, month: month, yearlyOverview: yearlyOverview, yearlyLoading: yearlyLoading, goToMonth: goToMonth, personLabel: person && person.startsWith('TEAM:') ? `${person.slice(5)} (Équipe)` : person, onRefresh: () => setDataVersion((v) => v + 1) }))),
+        React.createElement("div", { style: { padding: '22px 26px 40px', maxWidth: 1180, margin: '0 auto' } }, loading || !person ? (React.createElement("div", { style: { textAlign: 'center', padding: 60, color: C.inkSoft } }, "Chargement\u2026")) : tab === 'saisie' ? (isTeam ? (React.createElement(TeamRecap, { year: year, month: month, rows: teamRecap, cardStyle: cardStyle })) : (React.createElement(SaisieTab, { year: year, month: month, weeks: weeks, specialties: specialties, entryFor: entryFor, updateEntry: updateEntry, absences: absences, setAbsence: setAbsence, onOpenPeriod: () => setShowPeriod(true), objectif: objectif, updateObjectif: updateObjectif, savedPulse: savedPulse, cardStyle: cardStyle, specialtyTotals: specialtyTotals, grandTotal: grandTotal, gap: gap, progression: progression, dirty: dirty, saving: saving, saveNow: saveNow, readOnly: !canEdit, viewedPerson: person, autoStyle: autoStyle, autoTitle: autoTitle }))) : (React.createElement(DashboardTab, { isTeam: isTeam, objectif: objectif, grandTotal: grandTotal, gap: gap, progression: progression, specialtyTotals: specialtyTotals, weeks: weeks, weeklyTotals: weeklyTotals, specialties: specialties, calendarGrid: calendarGrid, heatColor: heatColor, heatTextColor: heatTextColor, dayTotal: dayTotal, cardStyle: cardStyle, year: year, month: month, yearlyOverview: yearlyOverview, yearlyLoading: yearlyLoading, goToMonth: goToMonth, personLabel: person && person.startsWith('TEAM:') ? `${person.slice(5)} (Équipe)` : person, onRefresh: () => setDataVersion((v) => v + 1) }))),
         showConfig && React.createElement(ConfigModal, { specialties: specialties, newSpec: newSpec, setNewSpec: setNewSpec, addSpecialty: addSpecialty, removeSpecialty: removeSpecialty, onClose: () => setShowConfig(false), onReset: resetSpecialties }),
         showImport && React.createElement(ImportModal, { onClose: () => setShowImport(false), onImport: importHistorical, importing: importing, importedMonths: importedMonths }),
         showPasswordModal && React.createElement(PasswordModal, { loggedInUser: loggedInUser, credentials: credentials, onChangePassword: changePassword, onClose: () => setShowPasswordModal(false) }),
@@ -1319,7 +1385,7 @@ function TeamRecap({ year, month, rows, cardStyle }) {
                     }))))),
         React.createElement("div", { style: { textAlign: 'center', fontSize: 12.5, color: '#5B6672', marginTop: 12 } }, "Choisissez un d\u00E9l\u00E9gu\u00E9 dans le menu pour voir le d\u00E9tail jour par jour.")));
 }
-function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, absences, setAbsence, onOpenPeriod, objectif, updateObjectif, savedPulse, cardStyle, specialtyTotals, grandTotal, gap, progression, dirty, saving, saveNow, readOnly, viewedPerson }) {
+function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, absences, setAbsence, onOpenPeriod, objectif, updateObjectif, savedPulse, cardStyle, specialtyTotals, grandTotal, gap, progression, dirty, saving, saveNow, readOnly, viewedPerson, autoStyle, autoTitle }) {
     const { calendarWorkdays, holidaysInMonth, absencesInMonth, trueWorkdays, suggestedObjectif } = workdayBreakdown(year, month, absences);
     const absSelectStyle = { fontSize: 11.5, border: `1px solid #D7DEDC`, borderRadius: 5, background: '#FBFCFC', color: '#5B6672', padding: '1px 2px', marginLeft: 6, cursor: 'pointer', maxWidth: 34 };
     return (React.createElement("div", null,
@@ -1430,9 +1496,9 @@ function SaisieTab({ year, month, weeks, specialties, entryFor, updateEntry, abs
                                         rowTotal += (e.prive || 0) + (e.public || 0);
                                         return (React.createElement(React.Fragment, { key: spec },
                                             React.createElement("td", { style: { ...tdStyle, borderLeft: '1px solid #EAEDEC' } },
-                                                React.createElement("input", { className: "num-input", type: "number", min: 0, value: e.prive || '', placeholder: "0", disabled: readOnly, onChange: (ev) => updateEntry(d, spec, 'prive', ev.target.value) })),
+                                                React.createElement("input", { className: "num-input", type: "number", min: 0, value: e.prive || '', placeholder: "0", disabled: readOnly, style: autoStyle(d, spec, 'prive'), title: autoTitle(d, spec, 'prive'), onChange: (ev) => updateEntry(d, spec, 'prive', ev.target.value) })),
                                             React.createElement("td", { style: tdStyle },
-                                                React.createElement("input", { className: "num-input", type: "number", min: 0, value: e.public || '', placeholder: "0", disabled: readOnly, onChange: (ev) => updateEntry(d, spec, 'public', ev.target.value) }))));
+                                                React.createElement("input", { className: "num-input", type: "number", min: 0, value: e.public || '', placeholder: "0", disabled: readOnly, style: autoStyle(d, spec, 'public'), title: autoTitle(d, spec, 'public'), onChange: (ev) => updateEntry(d, spec, 'public', ev.target.value) }))));
                                     }),
                                     React.createElement("td", { style: {
                                             ...tdStyle, fontFamily: fontMono, fontWeight: 700, borderLeft: '1px solid #EAEDEC',
